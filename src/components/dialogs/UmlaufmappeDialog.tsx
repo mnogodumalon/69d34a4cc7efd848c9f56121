@@ -374,7 +374,6 @@ export function UmlaufmappeDialog({ open, onClose, onSubmit, defaultValues, enab
               <SelectContent>
                 <SelectItem value="none">—</SelectItem>
                 <SelectItem value="offen">Offen</SelectItem>
-                <SelectItem value="in_bearbeitung">In Bearbeitung</SelectItem>
                 <SelectItem value="erledigt">Erledigt</SelectItem>
               </SelectContent>
             </Select>
