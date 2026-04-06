@@ -87,16 +87,23 @@ export default function DashboardOverview() {
   }, [umlaufmappe, mappeStatuses]);
 
   const filteredMappen = useMemo(() => {
-    if (statusFilter === 'alle') return umlaufmappe;
-    return umlaufmappe.filter(m => mappeStatuses[m.record_id] === statusFilter);
+    const filtered = statusFilter === 'alle' ? umlaufmappe : umlaufmappe.filter(m => mappeStatuses[m.record_id] === statusFilter);
+    return [...filtered].sort((a, b) => {
+      const dA = a.fields.faelligkeitsdatum ? new Date(a.fields.faelligkeitsdatum).getTime() : Infinity;
+      const dB = b.fields.faelligkeitsdatum ? new Date(b.fields.faelligkeitsdatum).getTime() : Infinity;
+      return dA - dB;
+    });
   }, [umlaufmappe, statusFilter, mappeStatuses]);
 
   const selectedPersonen = useMemo<EnrichedUmlaufmappePersonen[]>(() => {
     if (!selectedMappe) return [];
-    return enrichedUmlaufmappePersonen.filter(p => {
-      const id = extractRecordId(p.fields.umlaufmappe_ref);
-      return id === selectedMappe.record_id;
-    });
+    return enrichedUmlaufmappePersonen
+      .filter(p => extractRecordId(p.fields.umlaufmappe_ref) === selectedMappe.record_id)
+      .sort((a, b) => {
+        const nameA = (a.person_refName || '').split(' ')[0].toLowerCase();
+        const nameB = (b.person_refName || '').split(' ')[0].toLowerCase();
+        return nameA.localeCompare(nameB, 'de');
+      });
   }, [selectedMappe, enrichedUmlaufmappePersonen]);
 
   const selectedRueckmeldungen = useMemo<EnrichedUmlaufRueckmeldung[]>(() => {
