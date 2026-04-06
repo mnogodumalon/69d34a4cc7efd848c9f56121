@@ -212,7 +212,6 @@ export default function DashboardOverview() {
                 {[
                   { key: 'alle', label: 'Alle' },
                   { key: 'offen', label: 'Offen' },
-                  { key: 'in_bearbeitung', label: 'Aktiv' },
                   { key: 'erledigt', label: 'Erledigt' },
                 ].map(f => (
                   <button
