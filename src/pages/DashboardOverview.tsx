@@ -30,6 +30,38 @@ export default function DashboardOverview() {
   const enrichedUmlaufmappePersonen = enrichUmlaufmappePersonen(umlaufmappePersonen, { umlaufmappeMap, personenstammMap });
   const enrichedUmlaufRueckmeldung = enrichUmlaufRueckmeldung(umlaufRueckmeldung, { umlaufmappeMap, personenstammMap });
 
+  // Berechnet den effektiven Status jeder Umlaufmappe basierend auf den tatsächlichen Anforderungen
+  const mappeStatuses = useMemo(() => {
+    const result: Record<string, string> = {};
+    for (const mappe of umlaufmappe) {
+      const personen = enrichedUmlaufmappePersonen.filter(p => extractRecordId(p.fields.umlaufmappe_ref) === mappe.record_id);
+      const rueckmeldungen = enrichedUmlaufRueckmeldung.filter(r => extractRecordId(r.fields.umlaufmappe_ref) === mappe.record_id);
+      const minZ = mappe.fields.min_zustimmungen;
+      const minK = mappe.fields.min_kenntnisnahmen;
+
+      if (minZ || minK) {
+        const zustimmungenCount = personen.filter(p => {
+          if (p.fields.aufgabentyp?.key !== 'zustimmung') return false;
+          const personId = extractRecordId(p.fields.person_ref);
+          if (!personId) return false;
+          return rueckmeldungen.some(r => extractRecordId(r.fields.person_ref) === personId && r.fields.entscheidung?.key === 'ja');
+        }).length;
+        const kenntnisnahmenCount = personen.filter(p => {
+          if (p.fields.aufgabentyp?.key !== 'kenntnisnahme') return false;
+          const personId = extractRecordId(p.fields.person_ref);
+          if (!personId) return false;
+          return rueckmeldungen.some(r => extractRecordId(r.fields.person_ref) === personId);
+        }).length;
+        const zOk = !minZ || zustimmungenCount >= minZ;
+        const kOk = !minK || kenntnisnahmenCount >= minK;
+        result[mappe.record_id] = (zOk && kOk) ? 'erledigt' : (mappe.fields.status?.key === 'erledigt' ? 'offen' : (mappe.fields.status?.key ?? 'offen'));
+      } else {
+        result[mappe.record_id] = mappe.fields.status?.key ?? 'offen';
+      }
+    }
+    return result;
+  }, [umlaufmappe, enrichedUmlaufmappePersonen, enrichedUmlaufRueckmeldung]);
+
   const [selectedMappe, setSelectedMappe] = useState<Umlaufmappe | null>(null);
   const [mappeDialogOpen, setMappeDialogOpen] = useState(false);
   const [editMappe, setEditMappe] = useState<Umlaufmappe | null>(null);
@@ -48,16 +80,16 @@ export default function DashboardOverview() {
 
   const stats = useMemo(() => {
     const gesamt = umlaufmappe.length;
-    const offen = umlaufmappe.filter(m => m.fields.status?.key === 'offen').length;
-    const inBearbeitung = umlaufmappe.filter(m => m.fields.status?.key === 'in_bearbeitung').length;
-    const erledigt = umlaufmappe.filter(m => m.fields.status?.key === 'erledigt').length;
+    const offen = umlaufmappe.filter(m => mappeStatuses[m.record_id] === 'offen').length;
+    const inBearbeitung = umlaufmappe.filter(m => mappeStatuses[m.record_id] === 'in_bearbeitung').length;
+    const erledigt = umlaufmappe.filter(m => mappeStatuses[m.record_id] === 'erledigt').length;
     return { gesamt, offen, inBearbeitung, erledigt };
-  }, [umlaufmappe]);
+  }, [umlaufmappe, mappeStatuses]);
 
   const filteredMappen = useMemo(() => {
     if (statusFilter === 'alle') return umlaufmappe;
-    return umlaufmappe.filter(m => m.fields.status?.key === statusFilter);
-  }, [umlaufmappe, statusFilter]);
+    return umlaufmappe.filter(m => mappeStatuses[m.record_id] === statusFilter);
+  }, [umlaufmappe, statusFilter, mappeStatuses]);
 
   const selectedPersonen = useMemo<EnrichedUmlaufmappePersonen[]>(() => {
     if (!selectedMappe) return [];
@@ -87,11 +119,11 @@ export default function DashboardOverview() {
     }
   }, [umlaufmappe]);
 
-  // Sync selectedMappe mit aktualisierten Daten (z.B. nach Status-Änderung)
+  // Sync selectedMappe mit aktualisierten Daten (alle Felder, nicht nur Status)
   useEffect(() => {
     if (!selectedMappe) return;
     const updated = umlaufmappe.find(m => m.record_id === selectedMappe.record_id);
-    if (updated && updated.fields.status?.key !== selectedMappe.fields.status?.key) {
+    if (updated && updated.updatedat !== selectedMappe.updatedat) {
       setSelectedMappe(updated);
     }
   }, [umlaufmappe]);
@@ -108,35 +140,11 @@ export default function DashboardOverview() {
     }
   }, [statusFilter]);
 
-  // Grüner Header: alle gesetzten Mindestanforderungen erfüllt?
+  // Grüner Header: Mindestanforderungen für die selektierte Mappe erfüllt?
   const isRequirementsMet = useMemo(() => {
     if (!selectedMappe) return false;
-    const minZ = selectedMappe.fields.min_zustimmungen;
-    const minK = selectedMappe.fields.min_kenntnisnahmen;
-    if (!minZ && !minK) return false;
-
-    const zustimmungenCount = selectedPersonen.filter(p => {
-      if (p.fields.aufgabentyp?.key !== 'zustimmung') return false;
-      const personId = extractRecordId(p.fields.person_ref);
-      if (!personId) return false;
-      return selectedRueckmeldungen.some(r =>
-        extractRecordId(r.fields.person_ref) === personId && r.fields.entscheidung?.key === 'ja'
-      );
-    }).length;
-
-    const kenntnisnahmenCount = selectedPersonen.filter(p => {
-      if (p.fields.aufgabentyp?.key !== 'kenntnisnahme') return false;
-      const personId = extractRecordId(p.fields.person_ref);
-      if (!personId) return false;
-      return selectedRueckmeldungen.some(r =>
-        extractRecordId(r.fields.person_ref) === personId && r.fields.entscheidung?.key === 'ja'
-      );
-    }).length;
-
-    const zOk = !minZ || zustimmungenCount >= minZ;
-    const kOk = !minK || kenntnisnahmenCount >= minK;
-    return zOk && kOk;
-  }, [selectedMappe, selectedPersonen, selectedRueckmeldungen]);
+    return mappeStatuses[selectedMappe.record_id] === 'erledigt';
+  }, [selectedMappe, mappeStatuses]);
 
   // Auto-Erledigt: Status auf "erledigt" setzen wenn Mindestanforderungen erfüllt
   useEffect(() => {
@@ -248,7 +256,7 @@ export default function DashboardOverview() {
                 const isSelected = selectedMappe?.record_id === mappe.record_id;
                 const persCount = umlaufmappePersonen.filter(p => extractRecordId(p.fields.umlaufmappe_ref) === mappe.record_id).length;
                 const rueckCount = umlaufRueckmeldung.filter(r => extractRecordId(r.fields.umlaufmappe_ref) === mappe.record_id).length;
-                const status = mappe.fields.status?.key ?? 'offen';
+                const status = mappeStatuses[mappe.record_id] ?? 'offen';
 
                 return (
                   <div
@@ -321,7 +329,7 @@ export default function DashboardOverview() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="font-semibold text-foreground truncate">{selectedMappe.fields.titel || '(kein Titel)'}</h2>
-                      <StatusBadge status={selectedMappe.fields.status?.key ?? 'offen'} />
+                      <StatusBadge status={mappeStatuses[selectedMappe.record_id] ?? 'offen'} />
                     </div>
                     {selectedMappe.fields.zweck && (
                       <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{selectedMappe.fields.zweck}</p>
@@ -398,13 +406,22 @@ export default function DashboardOverview() {
                         const personName = person.person_refName || (personId ? getPersonName(personId) : '–');
                         const entscheidung = rueckmeldung?.fields.entscheidung?.key;
 
+                        const aufgabenTypKey = person.fields.aufgabentyp?.key;
+                        const isKenntnisnahme = aufgabenTypKey === 'kenntnisnahme';
+                        const avatarClass = entscheidung === 'ja'
+                          ? isKenntnisnahme ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                          : entscheidung === 'nein' ? 'bg-red-100 text-red-700'
+                          : 'bg-muted text-muted-foreground';
+                        const statusLabel = entscheidung === 'ja'
+                          ? isKenntnisnahme ? '✓ Zur Kenntnis genommen' : '✓ Zugestimmt'
+                          : '✗ Abgelehnt';
+                        const statusColor = entscheidung === 'ja'
+                          ? isKenntnisnahme ? 'text-blue-600' : 'text-green-600'
+                          : 'text-red-600';
+
                         return (
                           <div key={person.record_id} className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                              entscheidung === 'ja' ? 'bg-green-100 text-green-700' :
-                              entscheidung === 'nein' ? 'bg-red-100 text-red-700' :
-                              'bg-muted text-muted-foreground'
-                            }`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${avatarClass}`}>
                               {personName.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -414,8 +431,8 @@ export default function DashboardOverview() {
                                   <span className="text-xs text-muted-foreground">{person.fields.aufgabentyp.label}</span>
                                 )}
                                 {rueckmeldung ? (
-                                  <span className={`text-xs font-medium ${entscheidung === 'ja' ? 'text-green-600' : 'text-red-600'}`}>
-                                    {entscheidung === 'ja' ? '✓ Genehmigt/Zur Kenntnis' : '✗ Abgelehnt'}
+                                  <span className={`text-xs font-medium ${statusColor}`}>
+                                    {statusLabel}
                                     {rueckmeldung.fields.rueckmeldedatum && ` · ${formatDate(rueckmeldung.fields.rueckmeldedatum)}`}
                                   </span>
                                 ) : (
