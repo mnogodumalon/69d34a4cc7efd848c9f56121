@@ -87,6 +87,15 @@ export default function DashboardOverview() {
     }
   }, [umlaufmappe]);
 
+  // Sync selectedMappe mit aktualisierten Daten (z.B. nach Status-Änderung)
+  useEffect(() => {
+    if (!selectedMappe) return;
+    const updated = umlaufmappe.find(m => m.record_id === selectedMappe.record_id);
+    if (updated && updated.fields.status?.key !== selectedMappe.fields.status?.key) {
+      setSelectedMappe(updated);
+    }
+  }, [umlaufmappe]);
+
   // Grüner Header: alle gesetzten Mindestanforderungen erfüllt?
   const isRequirementsMet = useMemo(() => {
     if (!selectedMappe) return false;
@@ -116,6 +125,14 @@ export default function DashboardOverview() {
     const kOk = !minK || kenntnisnahmenCount >= minK;
     return zOk && kOk;
   }, [selectedMappe, selectedPersonen, selectedRueckmeldungen]);
+
+  // Auto-Erledigt: Status auf "erledigt" setzen wenn Mindestanforderungen erfüllt
+  useEffect(() => {
+    if (!selectedMappe || !isRequirementsMet) return;
+    if (selectedMappe.fields.status?.key === 'erledigt') return;
+    LivingAppsService.updateUmlaufmappeEntry(selectedMappe.record_id, { status: 'erledigt' })
+      .then(() => fetchAll());
+  }, [isRequirementsMet, selectedMappe?.record_id]);
 
   const getPersonName = (personId: string) => {
     const p = personenstamm.find(x => x.record_id === personId);
