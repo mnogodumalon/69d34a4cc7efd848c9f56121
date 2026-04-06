@@ -1,0 +1,8 @@
+- Umlaufmappe (umlaufmappe): titel[string/text], zweck[string/textarea], erstellungsdatum[date/date], faelligkeitsdatum[date/date], min_zustimmungen[number], min_kenntnisnahmen[number], status[lookup/radio], anhang_1[file], anhang_2[file], anhang_3[file], anhang_4[file], anhang_5[file], bemerkung[string/textarea]
+- Umlaufmappe_Personen (umlaufmappe_personen): umlaufmappe_ref[applookup/select], person_ref[applookup/select], aufgabentyp[lookup/radio], bemerkung[string/textarea]
+  → umlaufmappe_ref links to app_id 69d34a329d0bfb14d67f386b
+  → person_ref links to app_id 69d34a2fba1095e8bb80aaad
+- Personenstamm (personenstamm): vorname[string/text], nachname[string/text], email[string/email], abteilung[string/text], telefon[string/tel]
+- Umlauf-Rückmeldung (umlauf_rueckmeldung): umlaufmappe_ref[applookup/select], person_ref[applookup/select], aufgabentyp[lookup/radio], entscheidung[lookup/radio], kommentar[string/textarea], rueckmeldedatum[date/date]
+  → umlaufmappe_ref links to app_id 69d34a329d0bfb14d67f386b
+  → person_ref links to app_id 69d34a2fba1095e8bb80aaad
