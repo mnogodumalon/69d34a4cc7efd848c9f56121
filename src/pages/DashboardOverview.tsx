@@ -171,34 +171,6 @@ export default function DashboardOverview() {
 
   return (
     <div className="space-y-6">
-      {/* KPI Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard
-          title="Gesamt"
-          value={String(stats.gesamt)}
-          description="Umlaufmappen"
-          icon={<IconFolder size={18} className="text-muted-foreground" />}
-        />
-        <StatCard
-          title="Offen"
-          value={String(stats.offen)}
-          description="Noch nicht gestartet"
-          icon={<IconClockHour4 size={18} className="text-muted-foreground" />}
-        />
-        <StatCard
-          title="In Bearbeitung"
-          value={String(stats.inBearbeitung)}
-          description="Wird bearbeitet"
-          icon={<IconUsers size={18} className="text-muted-foreground" />}
-        />
-        <StatCard
-          title="Erledigt"
-          value={String(stats.erledigt)}
-          description="Abgeschlossen"
-          icon={<IconCheckbox size={18} className="text-muted-foreground" />}
-        />
-      </div>
-
       {/* Main Workspace: Master-Detail */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-[520px]">
 
@@ -438,20 +410,6 @@ export default function DashboardOverview() {
                               >
                                 <IconSend size={12} className="shrink-0" />
                                 <span>Rückmeldung</span>
-                              </button>
-                              <button
-                                onClick={() => { setEditPerson(person); setPersonenDialogOpen(true); }}
-                                className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                title="Bearbeiten"
-                              >
-                                <IconPencil size={13} />
-                              </button>
-                              <button
-                                onClick={() => setDeletePerson(person)}
-                                className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                                title="Entfernen"
-                              >
-                                <IconTrash size={13} />
                               </button>
                             </div>
                           </div>
