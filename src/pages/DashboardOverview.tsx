@@ -5,7 +5,7 @@ import type { Umlaufmappe, Personenstamm, UmlaufmappePersonen, UmlaufRueckmeldun
 import { APP_IDS } from '@/types/app';
 import { LivingAppsService, extractRecordId, createRecordUrl } from '@/services/livingAppsService';
 import { formatDate } from '@/lib/formatters';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { IconAlertCircle, IconTool, IconRefresh, IconCheck, IconPlus, IconPencil, IconTrash, IconChevronRight, IconUsers, IconClockHour4, IconCheckbox, IconFolder, IconFileText, IconX, IconSend, IconThumbUp, IconThumbDown } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { StatCard } from '@/components/StatCard';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { UmlaufmappeDialog } from '@/components/dialogs/UmlaufmappeDialog';
-import { UmlaufRueckmeldungDialog } from '@/components/dialogs/UmlaufRueckmeldungDialog';
 import { UmlaufmappePersonenDialog } from '@/components/dialogs/UmlaufmappePersonenDialog';
 import { AI_PHOTO_SCAN, AI_PHOTO_LOCATION } from '@/config/ai-features';
 
@@ -35,10 +34,6 @@ export default function DashboardOverview() {
   const [mappeDialogOpen, setMappeDialogOpen] = useState(false);
   const [editMappe, setEditMappe] = useState<Umlaufmappe | null>(null);
   const [deleteMappe, setDeleteMappe] = useState<Umlaufmappe | null>(null);
-
-  const [rueckmeldungDialogOpen, setRueckmeldungDialogOpen] = useState(false);
-  const [editRueckmeldung, setEditRueckmeldung] = useState<EnrichedUmlaufRueckmeldung | null>(null);
-  const [deleteRueckmeldung, setDeleteRueckmeldung] = useState<EnrichedUmlaufRueckmeldung | null>(null);
 
   const [personenDialogOpen, setPersonenDialogOpen] = useState(false);
   const [editPerson, setEditPerson] = useState<EnrichedUmlaufmappePersonen | null>(null);
@@ -79,6 +74,48 @@ export default function DashboardOverview() {
       return id === selectedMappe.record_id;
     });
   }, [selectedMappe, enrichedUmlaufRueckmeldung]);
+
+  // Auto-Select: aktuellste Umlaufmappe beim ersten Laden
+  const initialSelectionMade = useRef(false);
+  useEffect(() => {
+    if (!initialSelectionMade.current && umlaufmappe.length > 0) {
+      const sorted = [...umlaufmappe].sort((a, b) =>
+        new Date(b.createdat).getTime() - new Date(a.createdat).getTime()
+      );
+      setSelectedMappe(sorted[0]);
+      initialSelectionMade.current = true;
+    }
+  }, [umlaufmappe]);
+
+  // Grüner Header: alle gesetzten Mindestanforderungen erfüllt?
+  const isRequirementsMet = useMemo(() => {
+    if (!selectedMappe) return false;
+    const minZ = selectedMappe.fields.min_zustimmungen;
+    const minK = selectedMappe.fields.min_kenntnisnahmen;
+    if (!minZ && !minK) return false;
+
+    const zustimmungenCount = selectedPersonen.filter(p => {
+      if (p.fields.aufgabentyp?.key !== 'zustimmung') return false;
+      const personId = extractRecordId(p.fields.person_ref);
+      if (!personId) return false;
+      return selectedRueckmeldungen.some(r =>
+        extractRecordId(r.fields.person_ref) === personId && r.fields.entscheidung?.key === 'ja'
+      );
+    }).length;
+
+    const kenntnisnahmenCount = selectedPersonen.filter(p => {
+      if (p.fields.aufgabentyp?.key !== 'kenntnisnahme') return false;
+      const personId = extractRecordId(p.fields.person_ref);
+      if (!personId) return false;
+      return selectedRueckmeldungen.some(r =>
+        extractRecordId(r.fields.person_ref) === personId && r.fields.entscheidung?.key === 'ja'
+      );
+    }).length;
+
+    const zOk = !minZ || zustimmungenCount >= minZ;
+    const kOk = !minK || kenntnisnahmenCount >= minK;
+    return zOk && kOk;
+  }, [selectedMappe, selectedPersonen, selectedRueckmeldungen]);
 
   const getPersonName = (personId: string) => {
     const p = personenstamm.find(x => x.record_id === personId);
@@ -279,7 +316,7 @@ export default function DashboardOverview() {
           ) : (
             <>
               {/* Header */}
-              <div className="px-4 py-3 border-b border-border">
+              <div className={`px-4 py-3 border-b border-border transition-colors duration-500 ${isRequirementsMet ? 'bg-green-50/70' : ''}`}>
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -424,71 +461,6 @@ export default function DashboardOverview() {
                   )}
                 </div>
 
-                {/* Rückmeldungen */}
-                <div className="px-4 py-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Rückmeldungen</p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => { setEditRueckmeldung(null); setRueckmeldungDialogOpen(true); }}
-                      className="h-6 px-2 text-xs"
-                    >
-                      <IconPlus size={12} className="mr-1" />Rückmeldung
-                    </Button>
-                  </div>
-
-                  {selectedRueckmeldungen.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-3">Noch keine Rückmeldungen vorhanden.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {selectedRueckmeldungen.map(r => (
-                        <div key={r.record_id} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2">
-                          <div className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                            r.fields.entscheidung?.key === 'ja' ? 'bg-green-100' : 'bg-red-100'
-                          }`}>
-                            {r.fields.entscheidung?.key === 'ja'
-                              ? <IconCheck size={13} className="text-green-600" />
-                              : <IconX size={13} className="text-red-600" />
-                            }
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium text-foreground">{r.person_refName || '–'}</span>
-                              {r.fields.rueckmeldedatum && (
-                                <span className="text-xs text-muted-foreground">{formatDate(r.fields.rueckmeldedatum)}</span>
-                              )}
-                            </div>
-                            {r.fields.entscheidung && (
-                              <p className={`text-xs mt-0.5 ${r.fields.entscheidung.key === 'ja' ? 'text-green-600' : 'text-red-600'}`}>
-                                {r.fields.entscheidung.label}
-                              </p>
-                            )}
-                            {r.fields.kommentar && (
-                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{r.fields.kommentar}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() => { setEditRueckmeldung(r); setRueckmeldungDialogOpen(true); }}
-                              className="p-1 rounded hover:bg-muted text-muted-foreground"
-                              title="Bearbeiten"
-                            >
-                              <IconPencil size={13} />
-                            </button>
-                            <button
-                              onClick={() => setDeleteRueckmeldung(r)}
-                              className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                              title="Löschen"
-                            >
-                              <IconTrash size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             </>
           )}
@@ -538,32 +510,6 @@ export default function DashboardOverview() {
         enablePhotoLocation={AI_PHOTO_LOCATION['UmlaufmappePersonen']}
       />
 
-      <UmlaufRueckmeldungDialog
-        open={rueckmeldungDialogOpen}
-        onClose={() => { setRueckmeldungDialogOpen(false); setEditRueckmeldung(null); }}
-        onSubmit={async (fields) => {
-          if (editRueckmeldung) {
-            await LivingAppsService.updateUmlaufRueckmeldungEntry(editRueckmeldung.record_id, fields);
-          } else {
-            const enrichedFields = selectedMappe
-              ? { ...fields, umlaufmappe_ref: createRecordUrl(APP_IDS.UMLAUFMAPPE, selectedMappe.record_id) }
-              : fields;
-            await LivingAppsService.createUmlaufRueckmeldungEntry(enrichedFields);
-          }
-          fetchAll();
-        }}
-        defaultValues={editRueckmeldung
-          ? editRueckmeldung.fields
-          : selectedMappe
-            ? { umlaufmappe_ref: createRecordUrl(APP_IDS.UMLAUFMAPPE, selectedMappe.record_id) }
-            : undefined
-        }
-        umlaufmappeList={umlaufmappe}
-        personenstammList={personenstamm}
-        enablePhotoScan={AI_PHOTO_SCAN['UmlaufRueckmeldung']}
-        enablePhotoLocation={AI_PHOTO_LOCATION['UmlaufRueckmeldung']}
-      />
-
       <ConfirmDialog
         open={!!deleteMappe}
         title="Umlaufmappe löschen"
@@ -589,19 +535,6 @@ export default function DashboardOverview() {
           fetchAll();
         }}
         onClose={() => setDeletePerson(null)}
-      />
-
-      <ConfirmDialog
-        open={!!deleteRueckmeldung}
-        title="Rückmeldung löschen"
-        description="Diese Rückmeldung wirklich löschen?"
-        onConfirm={async () => {
-          if (!deleteRueckmeldung) return;
-          await LivingAppsService.deleteUmlaufRueckmeldungEntry(deleteRueckmeldung.record_id);
-          setDeleteRueckmeldung(null);
-          fetchAll();
-        }}
-        onClose={() => setDeleteRueckmeldung(null)}
       />
 
       {/* Minimaler Rückmeldung-Dialog */}
