@@ -96,6 +96,18 @@ export default function DashboardOverview() {
     }
   }, [umlaufmappe]);
 
+  // Filter-Sync: Wenn der aktive Filter wechselt, Auswahl auf erste passende Mappe setzen
+  useEffect(() => {
+    if (filteredMappen.length === 0) {
+      setSelectedMappe(null);
+      return;
+    }
+    const stillVisible = selectedMappe && filteredMappen.some(m => m.record_id === selectedMappe.record_id);
+    if (!stillVisible) {
+      setSelectedMappe(filteredMappen[0]);
+    }
+  }, [statusFilter]);
+
   // Grüner Header: alle gesetzten Mindestanforderungen erfüllt?
   const isRequirementsMet = useMemo(() => {
     if (!selectedMappe) return false;
