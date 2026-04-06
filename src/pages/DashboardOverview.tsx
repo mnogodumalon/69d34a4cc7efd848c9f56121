@@ -7,9 +7,10 @@ import { LivingAppsService, extractRecordId, createRecordUrl } from '@/services/
 import { formatDate } from '@/lib/formatters';
 import { useState, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { IconAlertCircle, IconTool, IconRefresh, IconCheck, IconPlus, IconPencil, IconTrash, IconChevronRight, IconUsers, IconClockHour4, IconCheckbox, IconFolder, IconFileText, IconX } from '@tabler/icons-react';
+import { IconAlertCircle, IconTool, IconRefresh, IconCheck, IconPlus, IconPencil, IconTrash, IconChevronRight, IconUsers, IconClockHour4, IconCheckbox, IconFolder, IconFileText, IconX, IconSend, IconThumbUp, IconThumbDown } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { StatCard } from '@/components/StatCard';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { UmlaufmappeDialog } from '@/components/dialogs/UmlaufmappeDialog';
@@ -44,6 +45,11 @@ export default function DashboardOverview() {
   const [deletePerson, setDeletePerson] = useState<EnrichedUmlaufmappePersonen | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<string>('alle');
+
+  const [quickRueckmeldungPerson, setQuickRueckmeldungPerson] = useState<EnrichedUmlaufmappePersonen | null>(null);
+  const [quickDecision, setQuickDecision] = useState<'ja' | 'nein' | ''>('');
+  const [quickKommentar, setQuickKommentar] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
 
   const stats = useMemo(() => {
     const gesamt = umlaufmappe.length;
@@ -82,6 +88,45 @@ export default function DashboardOverview() {
 
   const getRueckmeldungForPerson = (personId: string) => {
     return selectedRueckmeldungen.find(r => extractRecordId(r.fields.person_ref) === personId);
+  };
+
+  const openQuickRueckmeldung = (person: EnrichedUmlaufmappePersonen) => {
+    const personId = extractRecordId(person.fields.person_ref);
+    const existing = personId ? getRueckmeldungForPerson(personId) : undefined;
+    if (person.fields.aufgabentyp?.key === 'kenntnisnahme') {
+      setQuickDecision('ja');
+    } else {
+      setQuickDecision((existing?.fields.entscheidung?.key as 'ja' | 'nein' | '') ?? '');
+    }
+    setQuickKommentar(existing?.fields.kommentar ?? '');
+    setQuickRueckmeldungPerson(person);
+  };
+
+  const handleQuickSave = async () => {
+    const person = quickRueckmeldungPerson;
+    const decision = quickDecision;
+    if (!person || !decision || !selectedMappe) return;
+    setQuickSaving(true);
+    try {
+      const personId = extractRecordId(person.fields.person_ref);
+      const existing = personId ? getRueckmeldungForPerson(personId) : undefined;
+      const fields = {
+        umlaufmappe_ref: createRecordUrl(APP_IDS.UMLAUFMAPPE, selectedMappe.record_id),
+        person_ref: person.fields.person_ref,
+        entscheidung: decision,
+        ...(quickKommentar ? { kommentar: quickKommentar } : {}),
+        rueckmeldedatum: new Date().toISOString().split('T')[0],
+      };
+      if (existing) {
+        await LivingAppsService.updateUmlaufRueckmeldungEntry(existing.record_id, fields);
+      } else {
+        await LivingAppsService.createUmlaufRueckmeldungEntry(fields);
+      }
+      fetchAll();
+      setQuickRueckmeldungPerson(null);
+    } finally {
+      setQuickSaving(false);
+    }
   };
 
   if (loading) return <DashboardSkeleton />;
@@ -344,7 +389,19 @@ export default function DashboardOverview() {
                                 <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{rueckmeldung.fields.kommentar}</p>
                               )}
                             </div>
-                            <div className="flex items-center gap-1 shrink-0">
+                            <div className="flex items-center gap-1 shrink-0 flex-wrap">
+                              <button
+                                onClick={() => openQuickRueckmeldung(person)}
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                                  rueckmeldung
+                                    ? 'bg-muted text-muted-foreground hover:bg-muted/60'
+                                    : 'bg-primary/10 text-primary hover:bg-primary/20'
+                                }`}
+                                title="Rückmeldung geben"
+                              >
+                                <IconSend size={12} className="shrink-0" />
+                                <span>Rückmeldung</span>
+                              </button>
                               <button
                                 onClick={() => { setEditPerson(person); setPersonenDialogOpen(true); }}
                                 className="p-1 rounded hover:bg-muted text-muted-foreground"
@@ -546,6 +603,74 @@ export default function DashboardOverview() {
         }}
         onClose={() => setDeleteRueckmeldung(null)}
       />
+
+      {/* Minimaler Rückmeldung-Dialog */}
+      <Dialog open={!!quickRueckmeldungPerson} onOpenChange={open => { if (!open) setQuickRueckmeldungPerson(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rückmeldung</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="text-sm">
+              <span className="font-medium">{quickRueckmeldungPerson?.person_refName}</span>
+              {quickRueckmeldungPerson?.fields.aufgabentyp && (
+                <span className="ml-2 text-muted-foreground text-xs">· {quickRueckmeldungPerson.fields.aufgabentyp.label}</span>
+              )}
+            </div>
+
+            {quickRueckmeldungPerson?.fields.aufgabentyp?.key === 'kenntnisnahme' ? (
+              <div className="rounded-lg border-2 border-green-500 bg-green-50 p-4 flex items-center gap-3 text-green-700">
+                <IconCheck size={20} className="shrink-0" />
+                <div>
+                  <p className="font-medium text-sm">Zur Kenntnis genommen</p>
+                  <p className="text-xs text-green-600 mt-0.5">Wird als Kenntnisnahme gespeichert</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setQuickDecision('ja')}
+                  className={`flex-1 py-3 px-3 rounded-lg border-2 flex items-center justify-center gap-2 transition-colors text-sm font-medium ${
+                    quickDecision === 'ja'
+                      ? 'border-green-500 bg-green-50 text-green-700'
+                      : 'border-border text-muted-foreground hover:border-green-300 hover:bg-green-50/50'
+                  }`}
+                >
+                  <IconThumbUp size={16} className="shrink-0" />
+                  Zustimmen
+                </button>
+                <button
+                  onClick={() => setQuickDecision('nein')}
+                  className={`flex-1 py-3 px-3 rounded-lg border-2 flex items-center justify-center gap-2 transition-colors text-sm font-medium ${
+                    quickDecision === 'nein'
+                      ? 'border-red-500 bg-red-50 text-red-700'
+                      : 'border-border text-muted-foreground hover:border-red-300 hover:bg-red-50/50'
+                  }`}
+                >
+                  <IconThumbDown size={16} className="shrink-0" />
+                  Ablehnen
+                </button>
+              </div>
+            )}
+
+            <Textarea
+              placeholder="Kommentar (optional)"
+              value={quickKommentar}
+              onChange={e => setQuickKommentar(e.target.value)}
+              rows={2}
+              className="resize-none"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setQuickRueckmeldungPerson(null)}>
+              Abbrechen
+            </Button>
+            <Button size="sm" onClick={handleQuickSave} disabled={quickSaving || !quickDecision}>
+              {quickSaving ? 'Wird gespeichert…' : 'Speichern'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
